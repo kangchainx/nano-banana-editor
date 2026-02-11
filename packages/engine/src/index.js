@@ -11,6 +11,17 @@ const FEATURE_HINTS = Object.freeze({
   COMPONENT: "Transfer specific components or accessories."
 });
 
+function summarizeText(text, maxLength = 420) {
+  if (typeof text !== "string") {
+    return "";
+  }
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 3)}...`;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -108,7 +119,7 @@ function buildWorkflowGraph(contract) {
   return {
     name: "MEIE-DualTrack-Gemini",
     version: "0.2.0",
-    model: DEFAULT_MODEL,
+    model: contract.model || DEFAULT_MODEL,
     promptIndexing,
     nodes: [
       {
@@ -143,7 +154,11 @@ export async function runDualTrackGeneration(contract, options = {}) {
     throw new Error("Missing GEMINI_API_KEY environment variable.");
   }
 
-  const workflowGraph = buildWorkflowGraph(contract);
+  const targetModel = contract.model || DEFAULT_MODEL;
+  const workflowGraph = buildWorkflowGraph({
+    ...contract,
+    model: targetModel
+  });
   const warnings = [];
   if (workflowGraph.promptIndexing.outOfRange.length > 0) {
     warnings.push(
@@ -219,7 +234,7 @@ export async function runDualTrackGeneration(contract, options = {}) {
     }
   };
 
-  const endpoint = `${DEFAULT_BASE_URL}/models/${encodeURIComponent(DEFAULT_MODEL)}:generateContent`;
+  const endpoint = `${DEFAULT_BASE_URL}/models/${encodeURIComponent(targetModel)}:generateContent`;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -229,12 +244,57 @@ export async function runDualTrackGeneration(contract, options = {}) {
     body: JSON.stringify(requestBody)
   });
 
-  const resultJson = await response.json().catch(() => null);
+  const responseText = await response.text();
+  let resultJson = null;
+  if (responseText) {
+    try {
+      resultJson = JSON.parse(responseText);
+    } catch {
+      resultJson = null;
+    }
+  }
+
   if (!response.ok) {
+    const requestId =
+      response.headers.get("x-request-id") ||
+      response.headers.get("x-goog-request-id") ||
+      null;
     const message =
       resultJson?.error?.message ||
       `Gemini API request failed with status ${response.status}.`;
-    throw new Error(message);
+    const detailSummary = summarizeText(
+      resultJson?.error
+        ? JSON.stringify(resultJson.error)
+        : responseText || "empty response body"
+    );
+    const error = new Error(message);
+    error.code = "GEMINI_API_ERROR";
+    error.details = {
+      provider: "gemini",
+      model: targetModel,
+      status: response.status,
+      statusText: response.statusText || null,
+      requestId,
+      bodySummary: detailSummary
+    };
+    throw error;
+  }
+
+  if (!resultJson) {
+    const error = new Error("Gemini returned non-JSON success response.");
+    error.code = "GEMINI_API_ERROR";
+    error.details = {
+      provider: "gemini",
+      model: targetModel,
+      status: response.status,
+      statusText: response.statusText || null,
+      requestId:
+        response.headers.get("x-request-id") ||
+        response.headers.get("x-goog-request-id") ||
+        null,
+      bodySummary: summarizeText(responseText || "empty response body")
+    };
+    throw error;
   }
 
   await sleep(150);
