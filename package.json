@@ -1,0 +1,14 @@
+{
+  "name": "nano-banana-editor-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node packages/server/src/index.js",
+    "start": "node packages/server/src/index.js",
+    "check": "node scripts/check.js"
+  }
+}
