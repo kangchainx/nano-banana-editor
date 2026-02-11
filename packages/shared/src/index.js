@@ -19,6 +19,11 @@ export const TASK_STATUSES = Object.freeze([
   "FAILED"
 ]);
 
+export const SUPPORTED_MODELS = Object.freeze([
+  "gemini-3-pro-image-preview",
+  "gemini-2.5-flash-image"
+]);
+
 export class ContractValidationError extends Error {
   constructor(code, message, details = {}) {
     super(message);
@@ -120,6 +125,17 @@ export function validateGenerationContract(input) {
   }
 
   const taskId = ensureString(input.taskId, "taskId");
+  const model =
+    input.model === undefined
+      ? SUPPORTED_MODELS[0]
+      : ensureString(input.model, "model");
+  if (!SUPPORTED_MODELS.includes(model)) {
+    throw new ContractValidationError(
+      "INVALID_MODEL",
+      `model must be one of ${SUPPORTED_MODELS.join(", ")}`,
+      { received: model }
+    );
+  }
   const prompt = ensureString(input.prompt, "prompt");
   const negativePrompt =
     input.negativePrompt === undefined
@@ -138,6 +154,7 @@ export function validateGenerationContract(input) {
 
   return {
     taskId,
+    model,
     prompt,
     negativePrompt,
     reference,
@@ -220,9 +237,16 @@ export function serializeError(error) {
   }
 
   if (error instanceof Error) {
+    const details =
+      error && typeof error === "object" && "details" in error ? error.details : undefined;
+    const code =
+      error && typeof error === "object" && "code" in error && typeof error.code === "string"
+        ? error.code
+        : "UNEXPECTED_ERROR";
     return {
-      code: "UNEXPECTED_ERROR",
-      message: error.message
+      code,
+      message: error.message,
+      details
     };
   }
 

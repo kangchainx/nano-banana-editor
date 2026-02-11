@@ -18,6 +18,7 @@ const REPO_ROOT = path.resolve(__dirname, "../../..");
 const WEB_PUBLIC_DIR = path.resolve(REPO_ROOT, "packages/web/public");
 const OUTPUT_DIR = path.resolve(REPO_ROOT, "packages/server/public/outputs");
 const MAX_BODY_BYTES = 40 * 1024 * 1024;
+const IS_PROD = process.env.NODE_ENV === "production";
 
 function loadDotEnvFile() {
   const envFilePath = path.resolve(REPO_ROOT, ".env");
@@ -72,6 +73,34 @@ const MIME_TYPES = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg"
 };
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function logInfo(message, meta = null) {
+  if (meta) {
+    console.log(`[${nowIso()}] INFO ${message}`, meta);
+    return;
+  }
+  console.log(`[${nowIso()}] INFO ${message}`);
+}
+
+function logWarn(message, meta = null) {
+  if (meta) {
+    console.warn(`[${nowIso()}] WARN ${message}`, meta);
+    return;
+  }
+  console.warn(`[${nowIso()}] WARN ${message}`);
+}
+
+function logError(message, meta = null) {
+  if (meta) {
+    console.error(`[${nowIso()}] ERROR ${message}`, meta);
+    return;
+  }
+  console.error(`[${nowIso()}] ERROR ${message}`);
+}
 
 function isPathInside(baseDir, candidatePath) {
   const relative = path.relative(baseDir, candidatePath);
@@ -176,6 +205,12 @@ async function runTask(taskId) {
     return;
   }
 
+  const startedAtMs = Date.now();
+  logInfo(`[${taskId}] task started`, {
+    sourceCount: task.contract.sources.length,
+    model: task.contract.model || process.env.GEMINI_MODEL || "gemini-3-pro-image-preview"
+  });
+
   updateTask(taskId, {
     status: "PROCESSING",
     errorCode: null,
@@ -190,6 +225,9 @@ async function runTask(taskId) {
   try {
     const result = await runDualTrackGeneration(task.contract, {
       onStage(stage) {
+        logInfo(`[${taskId}] stage ${stage.stage}`, {
+          progress: Number(stage.progress).toFixed(2)
+        });
         updateTask(taskId, { progress: stage });
       }
     });
@@ -210,6 +248,17 @@ async function runTask(taskId) {
         progress: 1
       }
     });
+
+    logInfo(`[${taskId}] task succeeded`, {
+      outputUrl: `/outputs/${filename}`,
+      outputMimeType: result.outputMimeType,
+      durationMs: Date.now() - startedAtMs,
+      warningCount: result.warnings.length
+    });
+
+    if (result.warnings.length > 0) {
+      logWarn(`[${taskId}] warnings`, { warnings: result.warnings });
+    }
   } catch (error) {
     const details = serializeError(error);
     updateTask(taskId, {
@@ -217,6 +266,12 @@ async function runTask(taskId) {
       outputUrl: null,
       errorCode: details.code,
       message: details.message
+    });
+    logError(`[${taskId}] task failed`, {
+      code: details.code,
+      message: details.message,
+      details: details.details ?? null,
+      durationMs: Date.now() - startedAtMs
     });
   }
 }
@@ -226,10 +281,12 @@ async function serveFile(res, filePath) {
     const data = await readFile(filePath);
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
+    const isWebStatic = isPathInside(WEB_PUBLIC_DIR, filePath);
+    const cacheControl = isWebStatic && !IS_PROD ? "no-cache" : ext === ".svg" ? "no-cache" : "public, max-age=300";
     res.writeHead(200, {
       "content-type": contentType,
       "content-length": data.length,
-      "cache-control": ext === ".svg" ? "no-cache" : "public, max-age=300"
+      "cache-control": cacheControl
     });
     res.end(data);
     return true;
@@ -317,9 +374,16 @@ async function requestHandler(req, res) {
 
       const record = createTaskRecord(contract);
       tasks.set(contract.taskId, record);
+      logInfo(`[${contract.taskId}] task accepted`, {
+        model: contract.model,
+        referenceWeight: contract.reference.weight,
+        sourceCount: contract.sources.length,
+        featureTypes: contract.sources.map((source) => source.featureType)
+      });
 
       setTimeout(() => {
         tasks.delete(contract.taskId);
+        logInfo(`[${contract.taskId}] task evicted from in-memory store`);
       }, 60 * 60 * 1000).unref();
 
       sendJson(res, 202, {
@@ -359,6 +423,9 @@ async function requestHandler(req, res) {
         const clients = sseClients.get(streamTaskId) ?? new Set();
         clients.add(record);
         sseClients.set(streamTaskId, clients);
+        logInfo(`[${streamTaskId}] SSE client connected`, {
+          clientCount: clients.size
+        });
 
         req.on("close", () => {
           clearInterval(record.keepAlive);
@@ -369,7 +436,14 @@ async function requestHandler(req, res) {
           entries.delete(record);
           if (entries.size === 0) {
             sseClients.delete(streamTaskId);
+            logInfo(`[${streamTaskId}] SSE client disconnected`, {
+              clientCount: 0
+            });
+            return;
           }
+          logInfo(`[${streamTaskId}] SSE client disconnected`, {
+            clientCount: entries.size
+          });
         });
         return;
       }
@@ -420,5 +494,5 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Nano Banana Editor server listening on http://${HOST}:${PORT}`);
+  logInfo(`Nano Banana Editor server listening on http://${HOST}:${PORT}`);
 });
