@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nano Banana Editor</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel panel-config">
+        <header>
+          <h1>Nano Banana Editor</h1>
+          <p>Multi-Element Image Engine · Dual-Track Injection</p>
+        </header>
+
+        <form id="generation-form">
+          <input id="task-id" name="taskId" type="hidden" />
+
+          <div class="field">
+            <label for="prompt">Prompt (支持 [Reference], [Source 0] 索引)</label>
+            <textarea id="prompt" name="prompt" rows="3" required></textarea>
+          </div>
+
+          <div class="field">
+            <label for="negative-prompt">Negative Prompt</label>
+            <textarea id="negative-prompt" name="negativePrompt" rows="2"></textarea>
+          </div>
+
+          <fieldset class="group">
+            <legend>REFERENCE / 骨架 (唯一)</legend>
+
+            <div class="field">
+              <label for="reference-file">参考图</label>
+              <input id="reference-file" type="file" accept="image/*" required />
+            </div>
+
+            <div class="field">
+              <label for="reference-weight">构图约束权重 <span id="reference-weight-text">0.85</span></label>
+              <input
+                id="reference-weight"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="0.85"
+              />
+            </div>
+          </fieldset>
+
+          <fieldset class="group">
+            <legend>SOURCES / 灵魂 (1:N)</legend>
+            <p class="hint">每个 Source 需要图片、特征类型和权重。</p>
+            <div id="sources"></div>
+            <button type="button" id="add-source">+ 添加 Source</button>
+          </fieldset>
+
+          <button type="submit" id="submit-btn" class="primary">提交生成任务</button>
+        </form>
+      </section>
+
+      <section class="panel panel-result">
+        <header>
+          <h2>任务状态</h2>
+        </header>
+        <ul id="status-steps" class="status-steps">
+          <li data-status="QUEUED">QUEUED</li>
+          <li data-status="PROCESSING">PROCESSING</li>
+          <li data-status="SUCCESS">SUCCESS</li>
+          <li data-status="FAILED">FAILED</li>
+        </ul>
+
+        <pre id="status-details" class="status-details">等待提交任务...</pre>
+
+        <div class="preview">
+          <img id="result-image" alt="生成结果预览" />
+        </div>
+      </section>
+    </main>
+
+    <template id="source-template">
+      <article class="source-item">
+        <div class="source-head">
+          <h3>Source <span class="source-index"></span></h3>
+          <button type="button" class="remove-source ghost">移除</button>
+        </div>
+
+        <div class="field">
+          <label>素材图</label>
+          <input class="source-file" type="file" accept="image/*" required />
+        </div>
+
+        <div class="field">
+          <label>featureType</label>
+          <select class="source-feature">
+            <option value="FACE">FACE</option>
+            <option value="STYLE">STYLE</option>
+            <option value="MATERIAL">MATERIAL</option>
+            <option value="COMPONENT">COMPONENT</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>weight <span class="source-weight-text">0.70</span></label>
+          <input class="source-weight" type="range" min="0" max="1" step="0.01" value="0.70" />
+        </div>
+      </article>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
