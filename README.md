@@ -1,6 +1,6 @@
 # Nano Banana Editor
 
-Nano Banana Editor 是一个基于 MEIE（Multi-Element Image Engine）思路实现的多图融合生成编辑器。
+基于 MEIE（Multi-Element Image Engine）思路实现的多图融合生成编辑器。
 
 ## 项目结构
 
